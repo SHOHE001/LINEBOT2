@@ -4,3 +4,6 @@
 # Pythonのキャッシュファイル
 __pycache__/
 *.pyc
+
+# 画像フォルダ
+images/
