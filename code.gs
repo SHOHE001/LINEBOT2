@@ -352,3 +352,4 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
