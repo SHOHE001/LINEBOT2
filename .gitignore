@@ -1,0 +1,4 @@
+﻿node_modules/
+.clasp.json
+.claspignore
+README.md以外のドキュメント
