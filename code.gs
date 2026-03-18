@@ -58,27 +58,30 @@ function doPost(e) {
 function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
 
 function logToSecretSheet(time, chatName, userName, type, content) {
-    try {
-      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-      // シート名として使えるようにサニタイズ（記号削除、31文字以内）
-      var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
-      var sheet = ss.getSheetByName(safeSheetName);
-      if (!sheet) {
-        sheet = ss.insertSheet(safeSheetName);
-        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
-        sheet.setFrozenRows(1);
-      }
-      sheet.appendRow([time, chatName, userName, type, content]);
-    } catch (e) {
-      // エラー発生時は管理者へ通知（デバッグ用）
-      var adminId = props.getProperty("MY_USER_ID");
-      if (adminId) pushMessage(adminId, "🚨 SecretLog Error: " + e.message + "\nSheetName: " + chatName);
+  try {
+    var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+    // シート名として使えるようにサニタイズ（記号削除、31文字以内）
+    var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
+    var sheet = ss.getSheetByName(safeSheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(safeSheetName);
+      sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+      sheet.setFrozenRows(1);
+    }
+    sheet.appendRow([time, chatName, userName, type, content]);
+  } catch (e) {
+    var adminId = PropertiesService.getScriptProperties().getProperty("MY_USER_ID");
+    if (adminId) {
+      try {
+        UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+          "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN") },
+          "method": "post",
+          "payload": JSON.stringify({ "to": adminId, "messages": [{ "type": "text", "text": "🚨 SecretLog Error: " + e.message + "\nSheetName: " + chatName }] })
+        });
+      } catch (f) {}
     }
   }
-    sheet.appendRow([time, chatName, userName, type, content]);
-  } catch (e) {}
 }
-
 function handleRenameCommand(commandText, replyToken, sourceId, source) {
   if (!commandText.trim()) {
     replyMessage(replyToken, "💡 名前を指定してください。\n例: /rename 旅行の写真");
@@ -354,4 +357,5 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
+
 
