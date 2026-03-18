@@ -87,7 +87,7 @@ function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yy
 function logToSecretSheet(time, chatName, userName, type, content) {
   try {
     var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-    var sheet = ss.getSheets()[0];
+    var sheet = ss.getSheetByName(getBaseName(source));
     sheet.appendRow([time, chatName, userName, type, content]);
   } catch (e) {}
 }
@@ -105,7 +105,7 @@ function handleRenameCommand(commandText, replyToken, sourceId, source) {
     if (!dateFolders.hasNext()) throw new Error("本日のファイルが見つかりません。");
     var targetFolder = dateFolders.next();
     var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheets()[0];
+    var sheet = ss.getSheetByName(getBaseName(source));
     
     var files = [];
     var fileIt = targetFolder.getFiles();
@@ -185,7 +185,7 @@ function handleMemoCommand(memoText, replyToken, sourceId, source) {
     var lastFileId = props.getProperty("LAST_FILE_ID_" + sourceId);
     if (!lastFileId) throw new Error("対象ファイルなし。");
     var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheets()[0];
+    var sheet = ss.getSheetByName(getBaseName(source));
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][4] && data[i][4].indexOf(lastFileId) !== -1) {
@@ -246,11 +246,23 @@ function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, file
 }
 
 function getOrCreateSpreadsheet(source, sourceId) {
-  var ssId = props.getProperty("SS_ID_" + sourceId);
-  if (ssId) { try { return SpreadsheetApp.openById(ssId); } catch (e) {} }
+    var ssId = props.getProperty("SHARED_LOG_SS_ID");
+    if (ssId) {
+      try { return SpreadsheetApp.openById(ssId); } catch (e) {}
+    }
+    var rootFolder = DriveApp.getFolderById(ROOT_FOLDER_ID);
+    var ss = SpreadsheetApp.create("LINE_BOT_ALL_LOGS");
+    props.setProperty("SHARED_LOG_SS_ID", ss.getId());
+    try {
+      var file = DriveApp.getFileById(ss.getId());
+      file.moveTo(rootFolder);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {}
+    return ss;
+  } catch (e) {} }
   var groupFolder = getOrCreateGroupFolder(source, sourceId);
   var ss = SpreadsheetApp.create("LOG_" + groupFolder.getName());
-  var sheet = ss.getSheets()[0];
+  var sheet = ss.getSheetByName(getBaseName(source));
   sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
   sheet.setFrozenRows(1);
   props.setProperty("SS_ID_" + sourceId, ss.getId());
@@ -391,6 +403,7 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
 
 
 
