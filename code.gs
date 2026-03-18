@@ -58,16 +58,31 @@ function doPost(e) {
 function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
 
 function logToSecretSheet(time, chatName, userName, type, content) {
-  try {
-    var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-    // シート名として使えるようにサニタイズ（記号削除、31文字以内）
-    var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
-    var sheet = ss.getSheetByName(safeSheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(safeSheetName);
-      sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
-      sheet.setFrozenRows(1);
+    try {
+      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+      // メインの全ログ用シートを保護（もし必要なら名前を固定）
+      var mainSheet = ss.getSheets()[0];
+      if (mainSheet.getName() === chatName) {
+        // もし1枚目のシート名がチャット名と同じなら、1枚目に書く（これが今の状態かもしれません）
+        // しかし、タブを分けたいので、明示的に別名で作成を試みる
+      }
+      
+      var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
+      var sheet = ss.getSheetByName(safeSheetName);
+      
+      // もし1枚目のシートがデフォルト名（シート1等）なら、それをリネームするか
+      // あるいは常に新しいシートを探す。
+      if (!sheet) {
+        sheet = ss.insertSheet(safeSheetName);
+        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([time, chatName, userName, type, content]);
+    } catch (e) {
+      // エラーログを管理者に飛ばす
+      console.error(e);
     }
+  }
     sheet.appendRow([time, chatName, userName, type, content]);
   } catch (e) {
     var adminId = PropertiesService.getScriptProperties().getProperty("MY_USER_ID");
@@ -357,5 +372,6 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
+
 
 
