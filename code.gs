@@ -329,7 +329,8 @@ function sendHelp(replyToken) {
 }
 
 function sendDetailedCommands(replyToken) {
-  var msg = '📋 [全コマンド一覧]\n━━━━━━━━━━━━━━\n✨ 名前変更 (/rename)\n・/rename [名前] : 直前を変更\n・/rename [番号] [名前] : 指定番号を変更\n・/rename last [個数] [名前] : 直近n件を一括\n・/rename all [名前] : 本日の全ファイルを一括\n\n📝 メモ (/memo)\n・/memo [内容] : 直前にメモ\n\n🗑 削除 (/delete)\n・/delete : 直前を削除\n・/delete [番号] : 指定番号を削除\n\n⚙ その他\n・/list : ファイル一覧を表示\n・/link : フォルダ/ログURLを表示\n・/reply [on/off] : 通知切替\n・/debug : 接続チェック\n・/contact [内容] : 管理者へ送信\n━━━━━━━━━━━━━━';
+  var msg = '📋 [全コマンド一覧]\n━━━━━━━━━━━━━━\n✨ 名前変更 (/rename)\n・/rename [名前] : 直前を変更\n・/rename [番号] [名前] : 指定番号を変更\n・/rename last [個数] [名前] : 直近n件を一括\n・/rename all [名前] : 本日の全ファイルを一括\n\n📝 メモ (/memo)\n・/memo [内容] : 直前にメモ\n\n🗑 削除 (/delete)\n・/delete : 直前を削除\n・/delete [番号] : 指定番号を削除\n\n⚙ その他\n・/list : ファイル一覧を表示\n・/link : フォルダ/ログURLを表示\n・/reply [on/off] : 通知切替\n・/debug : 接続チェック
+・/stats : 統計情報を表示\n・/contact [内容] : 管理者へ送信\n━━━━━━━━━━━━━━';
   replyMessage(replyToken, msg);
 }
 
@@ -437,5 +438,38 @@ function handleContactCommand(text, replyToken, userName, source) {
   if (adminId) {
     pushMessage(adminId, '📧 Contact from ' + userName + ':\n' + text);
     replyMessage(replyToken, '✅ 管理者へ送信しました。');
+  }
+}
+
+function handleStatsCommand(replyToken, sourceId, source) {
+  try {
+    var dateString = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+    var groupFolder = getOrCreateGroupFolder(source, sourceId);
+    var folders = groupFolder.getFoldersByName(dateString);
+    var fileCount = 0;
+    if (folders.hasNext()) {
+      var files = folders.next().getFiles();
+      while (files.hasNext()) { files.next(); fileCount++; }
+    }
+
+    var cache = CacheService.getScriptCache();
+    var cacheTestKey = 'stats_test_' + sourceId;
+    cache.put(cacheTestKey, 'OK', 60);
+    var cacheStatus = (cache.get(cacheTestKey) === 'OK') ? '✅ 正常 (高速化有効)' : '❌ 停止中';
+
+    var replyMode = props.getProperty('REPLY_MODE_' + sourceId) || 'OFF (Default)';
+    var chatName = getBaseName(source);
+
+    var msg = '📊 [システム統計ダッシュボード]\n━━━━━━━━━━━━━━\n';
+    msg += '📂 チャット名: ' + chatName + '\n';
+    msg += '📈 本日の保存数: ' + fileCount + ' 件\n';
+    msg += '⚡ キャッシュ状況: ' + cacheStatus + '\n';
+    msg += '🔔 通知モード: ' + replyMode.toUpperCase() + '\n';
+    msg += '🕒 診断時刻: ' + timestamp().split(' ')[1] + '\n';
+    msg += '━━━━━━━━━━━━━━\n✨ ボットは絶好調です！';
+
+    replyMessage(replyToken, msg);
+  } catch (e) {
+    replyMessage(replyToken, '📌 統計取得失敗: ' + e.toString());
   }
 }
