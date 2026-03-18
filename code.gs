@@ -47,122 +47,7 @@ function doPost(e) {
         }
       }
     }
-  } catch (err) {
-    var errMsg = err.toString();
-    if (replyTokenForError) replyMessage(replyTokenForError, "⚠️ システムエラー:\n" + errMsg + ERROR_CONTACT_MSG);
-    var adminId = props.getProperty("MY_USER_ID");
-    if (adminId) pushMessage(adminId, "🚨 エラー通知: " + errMsg);
-  }
-}
-
-function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
-
-function logToSecretSheet(time, chatName, userName, type, content) {
-    try {
-      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-      var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
-      var sheet = ss.getSheetByName(safeSheetName);
-      if (!sheet) {
-        sheet = ss.insertSheet(safeSheetName);
-        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
-        sheet.setFrozenRows(1);
-      }
-      sheet.appendRow([time, chatName, userName, type, content]);
-    } catch (e) {
-      // 🚨 エラーが発生した場合、LINEの管理者に詳細を通知
-      var adminId = PropertiesService.getScriptProperties().getProperty("MY_USER_ID");
-      if (adminId) {
-        try {
-          UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
-            "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN") },
-            "method": "post",
-            "payload": JSON.stringify({ "to": adminId, "messages": [{ "type": "text", "text": "🚨 SecretLog Error: " + e.message + "\nSheetName: " + chatName + "\nType: " + type }] })
-          });
-        } catch (f) {}
-      }
-    }
-  }
-    sheet.appendRow([time, chatName, userName, type, content]);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-function handleRenameCommand(commandText, replyToken, sourceId, source) {
-  if (!commandText.trim()) {
-    replyMessage(replyToken, "💡 名前を指定してください。\n例: /rename 旅行の写真");
-    return;
-  }
-  try {
-    var args = commandText.split(/\s+/);
-    var dateString = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd");
-    var groupFolder = getOrCreateGroupFolder(source, sourceId);
-    var dateFolders = groupFolder.getFoldersByName(dateString);
-    if (!dateFolders.hasNext()) throw new Error("本日のファイルが見つかりません。");
-    var targetFolder = dateFolders.next();
-    var ss = getOrCreateSpreadsheet(source, sourceId);
-    var chatName = getBaseName(source);
-    var sheet = ss.getSheetByName(chatName);
-
-    var files = [];
-    var fileIt = targetFolder.getFiles();
-    while(fileIt.hasNext()) { files.push(fileIt.next()); }
-    files.sort(function(a, b) { return b.getLastUpdated() - a.getLastUpdated(); });
-
-    if (args[0].toLowerCase() === "all") {
-      var baseName = args.slice(1).join(" ");
-      if (!baseName) throw new Error("名前を指定してください。");
-      for (var i = 0; i < files.length; i++) {
-        var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
-        var newName = baseName + "_" + (files.length - i) + ext;
-        files[i].setName(newName);
-        updateSSFileName(sheet, files[i].getId(), newName);
-      }
-      replyMessage(replyToken, "✅ 本日の全 " + files.length + " 件を一括リネームしました。");
-    } else if (args[0].toLowerCase() === "last" && !isNaN(args[1]) && args.length > 2) {
-      var count = parseInt(args[1]);
-      var baseName = args.slice(2).join(" ");
-      var limit = Math.min(count, files.length);
-      for (var i = 0; i < limit; i++) {
-        var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
-        var newName = baseName + "_" + (limit - i) + ext;
-        files[i].setName(newName);
-        updateSSFileName(sheet, files[i].getId(), newName);
-      }
-      replyMessage(replyToken, "✅ 直近 " + limit + " 件を一括リネームしました。");
-    } else if (!isNaN(args[0]) && args.length > 1) {
-      var index = parseInt(args[0]) - 1;
-      var newNamePart = args.slice(1).join(" ");
-      if (index < 0 || index >= files.length) throw new Error("該当番号なし。");
-      var ext = files[index].getName().substring(files[index].getName().lastIndexOf("."));
-      var finalName = newNamePart + ext;
-      files[index].setName(finalName);
-      updateSSFileName(sheet, files[index].getId(), finalName);
-      replyMessage(replyToken, "✅ " + (index + 1) + "番目のファイルをリネームしました。");
-    } else {
-      var lastId = props.getProperty("LAST_FILE_ID_" + sourceId);
-      if (!lastId) throw new Error("直前のファイルなし。");
-      var file = DriveApp.getFileById(lastId);
-      var ext = file.getName().substring(file.getName().lastIndexOf("."));
-      var finalName = commandText + ext;
-      file.setName(finalName);
-      updateSSFileName(sheet, lastId, finalName);
-      replyMessage(replyToken, "✅ リネーム完了: " + finalName);
-    }
-  } catch (e) { replyMessage(replyToken, "❌ リネームエラー: " + e.message); }
-}
-
-function updateSSFileName(sheet, fileId, newName) {
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][4] && data[i][4].indexOf(fileId) !== -1) {
-      sheet.getRange(i + 1, 3).setValue(newName);
-      break;
-    }
-  }
-}
-
-function handleMemoCommand(memoText, replyToken, sourceId, source) {
+  } catch (err) { var errMsg = err.toString(); if (replyTokenForError) replyMessage(replyTokenForError, '⚠️ システムエラー:\n' + errMsg + ERROR_CONTACT_MSG); var adminId = props.getProperty('MY_USER_ID'); if (adminId) pushMessage(adminId, '🚨 エラー通知: ' + errMsg); } } function handleMemoCommand(memoText, replyToken, sourceId, source) {
   if (!memoText.trim()) {
     replyMessage(replyToken, "💡 メモの内容を入力してください。\n例: /memo 海で撮った一枚");
     return;
@@ -215,15 +100,27 @@ function saveMediaToDrive(messageId, replyToken, msgType, source, originalName, 
 }
 
 function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
-  try {
-    var ss = getOrCreateSpreadsheet(source, sourceId);
-    var chatName = getBaseName(source);
-    var sheet = ss.getSheetByName(chatName);
-    if (!sheet) {
-      sheet = ss.insertSheet(chatName);
-      sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
-      sheet.setFrozenRows(1);
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+      var ss = getOrCreateSpreadsheet(source, sourceId);
+      var chatName = getBaseName(source);
+      var sheet = ss.getSheetByName(chatName);
+      if (!sheet) {
+        sheet = ss.insertSheet(chatName);
+        sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([time, userName, fileName, memo, fileUrl]);
+      if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+      SpreadsheetApp.flush();
+    } catch (e) {
+      var adminId = props.getProperty("MY_USER_ID");
+      if (adminId) pushMessage(adminId, "🚨 LogToSpreadsheet Error: " + e.toString());
+    } finally {
+      lock.releaseLock();
     }
+  }
     sheet.appendRow([time, userName, fileName, memo, fileUrl]);
     if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
   } catch (e) {}
@@ -363,4 +260,6 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
+
+
 
