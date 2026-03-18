@@ -227,28 +227,9 @@ function saveMediaToDrive(messageId, replyToken, msgType, source, originalName, 
   } catch (e) { replyMessage(replyToken, "❌ 保存失敗: " + e.toString()); }        
 }
 
-function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
-    try {
-      var ss = getOrCreateSpreadsheet(source, sourceId);
-      var chatName = getBaseName(source);
-      var sheet = ss.getSheetByName(chatName);
-      
-      if (!sheet) {
-        sheet = ss.insertSheet(chatName);
-        sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
-        sheet.setFrozenRows(1);
-      }
-      
-      sheet.appendRow([time, userName, fileName, memo, fileUrl]);
-      if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
-    } catch (e) {}
-  } catch (e) {}
-}
 
-function getOrCreateSpreadsheet(source, sourceId) {
-    var ssId = props.getProperty("SHARED_LOG_SS_ID");
-    if (ssId) {
-      try { return SpreadsheetApp.openById(ssId); } catch (e) {}
+
+ catch (e) {}
     }
     var rootFolder = DriveApp.getFolderById(ROOT_FOLDER_ID);
     var ss = SpreadsheetApp.create("LINE_BOT_ALL_LOGS");
@@ -411,3 +392,32 @@ function enforceAdminPrivacy() {
 
 
 
+
+  function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
+    try {
+      var ss = getOrCreateSpreadsheet(source, sourceId);
+      var chatName = getBaseName(source);
+      var sheet = ss.getSheetByName(chatName);
+      if (!sheet) {
+        sheet = ss.insertSheet(chatName);
+        sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([time, userName, fileName, memo, fileUrl]);
+      if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+    } catch (e) {}
+  }
+
+  function getOrCreateSpreadsheet(source, sourceId) {
+    var ssId = props.getProperty("SHARED_LOG_SS_ID");
+    if (ssId) {
+      try { return SpreadsheetApp.openById(ssId); } catch (e) {}
+    }
+    var ss = SpreadsheetApp.create("LINE_BOT_ALL_LOGS");
+    props.setProperty("SHARED_LOG_SS_ID", ss.getId());
+    try {
+      var file = DriveApp.getFileById(ss.getId());
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {}
+    return ss;
+  }
