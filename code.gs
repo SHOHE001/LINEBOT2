@@ -58,10 +58,16 @@ function doPost(e) {
 function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
 
 function logToSecretSheet(time, chatName, userName, type, content) {
-  try {
-    var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-    var sheet = ss.getSheets()[0];
-    sheet.appendRow([time, chatName, userName, type, content]);
+    try {
+      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+      var sheet = ss.getSheetByName(chatName);
+      if (!sheet) {
+        sheet = ss.insertSheet(chatName);
+        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([time, chatName, userName, type, content]);
+    } catch (e) {}
   } catch (e) {}
 }
 
@@ -349,3 +355,4 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
+
