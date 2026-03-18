@@ -228,11 +228,20 @@ function saveMediaToDrive(messageId, replyToken, msgType, source, originalName, 
 }
 
 function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
-  try {
-    var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheets()[0];
-    sheet.appendRow([time, userName, fileName, memo, fileUrl]);
-    if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+    try {
+      var ss = getOrCreateSpreadsheet(source, sourceId);
+      var chatName = getBaseName(source);
+      var sheet = ss.getSheetByName(chatName);
+      
+      if (!sheet) {
+        sheet = ss.insertSheet(chatName);
+        sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
+        sheet.setFrozenRows(1);
+      }
+      
+      sheet.appendRow([time, userName, fileName, memo, fileUrl]);
+      if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+    } catch (e) {}
   } catch (e) {}
 }
 
@@ -382,6 +391,7 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
 
 
 
