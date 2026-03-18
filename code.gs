@@ -1,14 +1,16 @@
 ﻿// --- 設定の読み込み ---
 var props = PropertiesService.getScriptProperties();
-var CHANNEL_ACCESS_TOKEN = props.getProperty("LINE_ACCESS_TOKEN");
-var ROOT_FOLDER_ID = props.getProperty("ROOT_FOLDER_ID");
-var MY_USER_ID = props.getProperty("MY_USER_ID"); 
-var SECRET_LOG_SS_ID = "1Spq2DKIev2sR8leJDJ2kS5kVaFbhRL5YUuIlmU-PLw4";
+var CHANNEL_ACCESS_TOKEN = props.getProperty('LINE_ACCESS_TOKEN');
+var ROOT_FOLDER_ID = props.getProperty('ROOT_FOLDER_ID');
+var MY_USER_ID = props.getProperty('MY_USER_ID');
+// ハードコードされていたIDをプロパティ優先に変更
+var SECRET_LOG_SS_ID = props.getProperty('SECRET_LOG_SS_ID') || '1Spq2DKIev2sR8leJDJ2kS5kVaFbhRL5YUuIlmU-PLw4';
+var LOG_FOLDER_ID = props.getProperty('LOG_FOLDER_ID') || '1Rq0psp37SqqyBsirNrYLxsEkbcNo4Kmg';
 
-var ERROR_CONTACT_MSG = "\n\n解決しない場合は /contact [内容] で管理者へお問い合わせください。";
+var ERROR_CONTACT_MSG = '\n\n解決しない場合は /contact [内容] で管理者へお問い合わせください。';
 
 function doPost(e) {
-  var replyTokenForError = "";
+  var replyTokenForError = '';
   try {
     if (!e || !e.postData) return;
     var json = JSON.parse(e.postData.contents);
@@ -25,55 +27,61 @@ function doPost(e) {
       var chatName = getBaseName(source);
       var time = timestamp();
 
-      if (event.type === "message") {
+      if (event.type === 'message') {
         var msgType = event.message.type;
-        if (msgType === "video" || msgType === "image" || msgType === "file") {
-          var originalName = (msgType === "file") ? event.message.fileName : null;
-          saveMediaToDrive(event.message.id, replyToken, msgType, source, originalName, sourceId, userName);    
-          logToSecretSheet(time, chatName, userName, "MEDIA: " + msgType, "(Saved to Drive)");
-        } else if (msgType === "text") {
+        if (msgType === 'video' || msgType === 'image' || msgType === 'file') {
+          var originalName = (msgType === 'file') ? event.message.fileName : null;
+          saveMediaToDrive(event.message.id, replyToken, msgType, source, originalName, sourceId, userName);
+          // ログ記録は独立して実行し、失敗してもメイン処理を止めない
+          try { logToSecretSheet(time, chatName, userName, 'MEDIA: ' + msgType, '(Saved to Drive)', source.type); } catch(e){}
+        } else if (msgType === 'text') {
           var text = event.message.text;
-          logToSecretSheet(time, chatName, userName, "TEXT", text);
-          if (text.indexOf("/rename ") === 0) handleRenameCommand(text.substring(8).trim(), replyToken, sourceId, source);
-          else if (text.indexOf("/memo ") === 0) handleMemoCommand(text.substring(6).trim(), replyToken, sourceId, source);
-          else if (text.indexOf("/contact ") === 0) handleContactCommand(text.substring(9).trim(), replyToken, userName, source);
-          else if (text === "/link") handleLinkCommand(replyToken, source, sourceId);
-          else if (text === "/help") sendHelp(replyToken);
-          else if (text === "/commands") sendDetailedCommands(replyToken);
-          else if (text === "/list") sendList(replyToken, source, sourceId);
-          else if (text === "/delete") handleDeleteCommand(replyToken, sourceId);
-          else if (text === "/debug") handleDebugCommand(replyToken, source, sourceId);
-          else if (text.indexOf("/reply ") === 0) handleReplyModeCommand(text.substring(7).trim(), replyToken, sourceId, source);
+          try { logToSecretSheet(time, chatName, userName, 'TEXT', text, source.type); } catch(e){}
+          if (text.indexOf('/rename ') === 0) handleRenameCommand(text.substring(8).trim(), replyToken, sourceId, source);
+          else if (text.indexOf('/memo ') === 0) handleMemoCommand(text.substring(6).trim(), replyToken, sourceId, source);
+          else if (text.indexOf('/contact ') === 0) handleContactCommand(text.substring(9).trim(), replyToken, userName, source);
+          else if (text === '/link') handleLinkCommand(replyToken, source, sourceId);
+          else if (text === '/help') sendHelp(replyToken);
+          else if (text === '/commands') sendDetailedCommands(replyToken);
+          else if (text === '/list') sendList(replyToken, source, sourceId);
+          else if (text.indexOf('/delete') === 0) handleDeleteCommand(text.substring(7).trim(), replyToken, sourceId, source);
+          else if (text === '/debug') handleDebugCommand(replyToken, source, sourceId);
+          else if (text.indexOf('/reply ') === 0) handleReplyModeCommand(text.substring(7).trim(), replyToken, sourceId, source);
         }
       }
     }
   } catch (err) {
     var errMsg = err.toString();
-    if (replyTokenForError) replyMessage(replyTokenForError, "⚠️ システムエラー:\n" + errMsg + ERROR_CONTACT_MSG);
-    var adminId = props.getProperty("MY_USER_ID");
-    if (adminId) pushMessage(adminId, "🚨 エラー通知: " + errMsg);
+    if (replyTokenForError) replyMessage(replyTokenForError, '⚠️ システムエラー:\n' + errMsg + ERROR_CONTACT_MSG);
+    var adminId = props.getProperty('MY_USER_ID');
+    if (adminId) pushMessage(adminId, '⚠️ エラー通知: ' + errMsg);
   }
 }
 
-function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
+function timestamp() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'); }
 
-function logToSecretSheet(time, chatName, userName, type, content) {
+function getSafeSheetName(name) {
+  return (name || 'Unknown').replace(/[\\\/\[\]\?\*\:]/g, '').trim().substring(0, 31) || 'Unknown';
+}
+
+function logToSecretSheet(time, chatName, userName, type, content, sourceType) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
     var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-    var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
+    var sheetName = (sourceType === 'user') ? '個人チャット' : chatName;
+    var safeSheetName = getSafeSheetName(sheetName);
+
     var sheet = ss.getSheetByName(safeSheetName);
     if (!sheet) {
       sheet = ss.insertSheet(safeSheetName);
-      sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+      sheet.appendRow(['日時', 'チャット名', 'ユーザー名', '種別', '内容']);
       sheet.setFrozenRows(1);
     }
     sheet.appendRow([time, chatName, userName, type, content]);
     SpreadsheetApp.flush();
   } catch (e) {
-    var adminId = props.getProperty("MY_USER_ID");
-    if (adminId) pushMessage(adminId, "🚨 SecretLog Error: " + e.toString());
+    console.error('SecretLog Error: ' + e.toString());
   } finally {
     lock.releaseLock();
   }
@@ -81,69 +89,72 @@ function logToSecretSheet(time, chatName, userName, type, content) {
 
 function handleRenameCommand(commandText, replyToken, sourceId, source) {
   if (!commandText.trim()) {
-    replyMessage(replyToken, "💡 名前を指定してください。\n例: /rename 旅行の写真");
+    replyMessage(replyToken, '💡 名前を指定してください。');
     return;
   }
   try {
     var args = commandText.split(/\s+/);
-    var dateString = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd");
+    var dateString = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
     var groupFolder = getOrCreateGroupFolder(source, sourceId);
     var dateFolders = groupFolder.getFoldersByName(dateString);
-    if (!dateFolders.hasNext()) throw new Error("本日のファイルが見つかりません。");
+    if (!dateFolders.hasNext()) throw new Error('本日のファイルが見つかりません。');
     var targetFolder = dateFolders.next();
+
     var ss = getOrCreateSpreadsheet(source, sourceId);
     var chatName = getBaseName(source);
-    var sheet = ss.getSheetByName(chatName);
+    var sheetName = (source.type === 'user') ? '個人チャット' : chatName;
+    var sheet = ss.getSheetByName(getSafeSheetName(sheetName));
 
     var files = [];
     var fileIt = targetFolder.getFiles();
     while(fileIt.hasNext()) { files.push(fileIt.next()); }
     files.sort(function(a, b) { return b.getLastUpdated() - a.getLastUpdated(); });
 
-    if (args[0].toLowerCase() === "all") {
-      var baseName = args.slice(1).join(" ");
-      if (!baseName) throw new Error("名前を指定してください。");
+    if (args[0].toLowerCase() === 'all') {
+      var baseName = args.slice(1).join(' ');
+      if (!baseName) throw new Error('名前を指定してください。');
       for (var i = 0; i < files.length; i++) {
-        var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
-        var newName = baseName + "_" + (files.length - i) + ext;
+        var ext = files[i].getName().substring(files[i].getName().lastIndexOf('.'));
+        var newName = baseName + '_' + (files.length - i) + ext;
         files[i].setName(newName);
         updateSSFileName(sheet, files[i].getId(), newName);
       }
-      replyMessage(replyToken, "✅ 本日の全 " + files.length + " 件を一括リネームしました。");
-    } else if (args[0].toLowerCase() === "last" && !isNaN(args[1]) && args.length > 2) {
+      replyMessage(replyToken, '✅ 一括リネーム完了');
+    } else if (args[0].toLowerCase() === 'last' && !isNaN(args[1]) && args.length > 2) {
       var count = parseInt(args[1]);
-      var baseName = args.slice(2).join(" ");
+      var baseName = args.slice(2).join(' ');
       var limit = Math.min(count, files.length);
       for (var i = 0; i < limit; i++) {
-        var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
-        var newName = baseName + "_" + (limit - i) + ext;
+        var ext = files[i].getName().substring(files[i].getName().lastIndexOf('.'));
+        var newName = baseName + '_' + (limit - i) + ext;
         files[i].setName(newName);
         updateSSFileName(sheet, files[i].getId(), newName);
       }
-      replyMessage(replyToken, "✅ 直近 " + limit + " 件を一括リネームしました。");
+      replyMessage(replyToken, '✅ 一括リネーム完了');
     } else if (!isNaN(args[0]) && args.length > 1) {
       var index = parseInt(args[0]) - 1;
-      var newNamePart = args.slice(1).join(" ");
-      if (index < 0 || index >= files.length) throw new Error("該当番号なし。");
-      var ext = files[index].getName().substring(files[index].getName().lastIndexOf("."));
+      var newNamePart = args.slice(1).join(' ');
+      if (index < 0 || index >= files.length) throw new Error('該当番号なし。');
+      var ext = files[index].getName().substring(files[index].getName().lastIndexOf('.'));
       var finalName = newNamePart + ext;
       files[index].setName(finalName);
       updateSSFileName(sheet, files[index].getId(), finalName);
-      replyMessage(replyToken, "✅ " + (index + 1) + "番目のファイルをリネームしました。");
+      replyMessage(replyToken, '✅ リネーム完了');
     } else {
-      var lastId = props.getProperty("LAST_FILE_ID_" + sourceId);
-      if (!lastId) throw new Error("直前のファイルなし。");
+      var lastId = props.getProperty('LAST_FILE_ID_' + sourceId);
+      if (!lastId) throw new Error('直前のファイルなし。');
       var file = DriveApp.getFileById(lastId);
-      var ext = file.getName().substring(file.getName().lastIndexOf("."));
+      var ext = file.getName().substring(file.getName().lastIndexOf('.'));
       var finalName = commandText + ext;
       file.setName(finalName);
       updateSSFileName(sheet, lastId, finalName);
-      replyMessage(replyToken, "✅ リネーム完了: " + finalName);
+      replyMessage(replyToken, '✅ リネーム完了: ' + finalName);
     }
-  } catch (e) { replyMessage(replyToken, "❌ リネームエラー: " + e.message); }
+  } catch (e) { replyMessage(replyToken, '❌ エラー: ' + e.message); }
 }
 
 function updateSSFileName(sheet, fileId, newName) {
+  if (!sheet) return;
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (data[i][4] && data[i][4].indexOf(fileId) !== -1) {
@@ -155,54 +166,56 @@ function updateSSFileName(sheet, fileId, newName) {
 
 function handleMemoCommand(memoText, replyToken, sourceId, source) {
   if (!memoText.trim()) {
-    replyMessage(replyToken, "💡 メモの内容を入力してください。\n例: /memo 海で撮った一枚");
+    replyMessage(replyToken, '💡 メモの内容を入力してください。');
     return;
   }
   try {
-    var lastFileId = props.getProperty("LAST_FILE_ID_" + sourceId);
-    if (!lastFileId) throw new Error("対象ファイルなし。");
+    var lastFileId = props.getProperty('LAST_FILE_ID_' + sourceId);
+    if (!lastFileId) throw new Error('対象ファイルなし。');
     var ss = getOrCreateSpreadsheet(source, sourceId);
     var chatName = getBaseName(source);
-    var sheet = ss.getSheetByName(chatName);
+    var sheetName = (source.type === 'user') ? '個人チャット' : chatName;
+    var sheet = ss.getSheetByName(getSafeSheetName(sheetName));
+    if (!sheet) throw new Error('ログが見つかりません。');
+
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][4] && data[i][4].indexOf(lastFileId) !== -1) {
         sheet.getRange(i + 1, 4).setValue(memoText);
-        replyMessage(replyToken, "📝 メモを記録しました。");
+        replyMessage(replyToken, '📝 メモを記録しました。');
         return;
       }
     }
-    throw new Error("ログが見つかりません。");
-  } catch (e) { replyMessage(replyToken, "❌ メモ失敗: " + e.message); }
+  } catch (e) { replyMessage(replyToken, '📌 メモ失敗: ' + e.message); }
 }
 
 function saveMediaToDrive(messageId, replyToken, msgType, source, originalName, sourceId, userName) {
   try {
-    var response = UrlFetchApp.fetch("https://api-data.line.me/v2/bot/message/" + messageId + "/content", { "headers": { "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "method": "get" });
+    var response = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + messageId + '/content', { 'headers': { 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN }, 'method': 'get' });
     var blob = response.getBlob();
-    var dateString = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd");
+    var dateString = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
     var groupFolder = getOrCreateGroupFolder(source, sourceId);
     var dateFolders = groupFolder.getFoldersByName(dateString);
-    var targetFolder = dateFolders.hasNext() ? dateFolders.next() : groupFolder.createFolder(dateString);       
-    var fileName = "";
-    if (msgType === "file" && originalName) {
+    var targetFolder = dateFolders.hasNext() ? dateFolders.next() : groupFolder.createFolder(dateString);
+    var fileName = '';
+    if (msgType === 'file' && originalName) {
       fileName = originalName;
       var counter = 1;
-      var nameWithoutExt = fileName.substring(0, fileName.lastIndexOf("."));
-      var ext = fileName.substring(fileName.lastIndexOf("."));
-      while (targetFolder.getFilesByName(fileName).hasNext()) { fileName = nameWithoutExt + "_" + counter + ext; counter++; }
+      var nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
+      var ext = fileName.substring(fileName.lastIndexOf('.'));
+      while (targetFolder.getFilesByName(fileName).hasNext()) { fileName = nameWithoutExt + '_' + counter + ext; counter++; }
     } else {
-      var ext = (msgType === "video") ? ".mp4" : ".jpg";
+      var ext = (msgType === 'video') ? '.mp4' : '.jpg';
       fileName = dateString + ext;
       var counter = 1;
-      while (targetFolder.getFilesByName(fileName).hasNext()) { fileName = dateString + "_" + counter + ext; counter++; }
+      while (targetFolder.getFilesByName(fileName).hasNext()) { fileName = dateString + '_' + counter + ext; counter++; }
     }
     blob.setName(fileName);
     var file = targetFolder.createFile(blob);
-    logToSpreadsheet(source, sourceId, userName, timestamp(), fileName, "", file.getUrl(), file.getId());       
-    var replyMode = props.getProperty("REPLY_MODE_" + sourceId);
-    if (source.type === "user" || replyMode === "on") sendFlexSavedMessage(replyToken, (msgType === "video" ? "動画" : (msgType === "image" ? "写真" : "ファイル")), fileName);
-  } catch (e) { replyMessage(replyToken, "❌ 保存失敗: " + e.toString()); }
+    try { logToSpreadsheet(source, sourceId, userName, timestamp(), fileName, '', file.getUrl(), file.getId()); } catch(e){}
+    var replyMode = props.getProperty('REPLY_MODE_' + sourceId);
+    if (source.type === 'user' || replyMode === 'on') sendFlexSavedMessage(replyToken, (msgType === 'video' ? '動画' : (msgType === 'image' ? '写真' : 'ファイル')), fileName);
+  } catch (e) { replyMessage(replyToken, '📌 保存失敗: ' + e.toString()); }
 }
 
 function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
@@ -211,154 +224,218 @@ function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, file
     lock.waitLock(30000);
     var ss = getOrCreateSpreadsheet(source, sourceId);
     var chatName = getBaseName(source);
-    var sheet = ss.getSheetByName(chatName);
+    var sheetName = (source.type === 'user') ? '個人チャット' : chatName;
+    var safeSheetName = getSafeSheetName(sheetName);
+
+    var sheet = ss.getSheetByName(safeSheetName);
     if (!sheet) {
-      sheet = ss.insertSheet(chatName);
-      sheet.appendRow(["日時", "ユーザー名", "ファイル名", "内容/memo", "URL"]);
+      sheet = ss.insertSheet(safeSheetName);
+      sheet.appendRow(['日時', 'ユーザー名', 'ファイル名', '内容/memo', 'URL']);
       sheet.setFrozenRows(1);
     }
     sheet.appendRow([time, userName, fileName, memo, fileUrl]);
-    if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+    if (fileId) props.setProperty('LAST_FILE_ID_' + sourceId, fileId);
     SpreadsheetApp.flush();
   } catch (e) {
-    var adminId = props.getProperty("MY_USER_ID");
-    if (adminId) pushMessage(adminId, "🚨 LogToSpreadsheet Error: " + e.toString());
+    console.error('Log Error: ' + e.toString());
   } finally {
     lock.releaseLock();
   }
 }
 
 function getOrCreateSpreadsheet(source, sourceId) {
-  var ssId = props.getProperty("SHARED_LOG_SS_ID");
-  if (ssId) {
-    try { return SpreadsheetApp.openById(ssId); } catch (e) {}
-  }
-  var ss = SpreadsheetApp.create("LINE_BOT_ALL_LOGS");
-  props.setProperty("SHARED_LOG_SS_ID", ss.getId());
-  try {
-    var file = DriveApp.getFileById(ss.getId());
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  } catch (e) {}
+  var ssId = props.getProperty('SHARED_LOG_SS_ID');
+  if (ssId) { try { return SpreadsheetApp.openById(ssId); } catch (e) {} }
+
+  var folder = DriveApp.getFolderById(LOG_FOLDER_ID);
+  var ss = SpreadsheetApp.create('LINE_BOT_LOGS');
+  var file = DriveApp.getFileById(ss.getId());
+  file.moveTo(folder);
+  // ユーザーの要望により閲覧権限は維持
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  props.setProperty('SHARED_LOG_SS_ID', ss.getId());
   return ss;
 }
 
 function getOrCreateGroupFolder(source, sourceId) {
-  var folderIdKey = "FOLDER_ID_" + sourceId;
-  var cachedId = props.getProperty(folderIdKey);
+  var cachedId = props.getProperty('FOLDER_ID_' + sourceId);
   if (cachedId) { try { return DriveApp.getFolderById(cachedId); } catch (e) {} }
   var rootFolder = DriveApp.getFolderById(ROOT_FOLDER_ID);
   var groupName = getBaseName(source);
   var folders = rootFolder.getFoldersByName(groupName);
   var folder = folders.hasNext() ? folders.next() : rootFolder.createFolder(groupName);
-  props.setProperty(folderIdKey, folder.getId());
+  props.setProperty('FOLDER_ID_' + sourceId, folder.getId());
   return folder;
 }
 
 function getBaseName(source) {
-  var name = "User_" + (source.userId ? source.userId.substring(0, 8) : "Unknown");
-  if (source.type === "group" && source.groupId) {
+  var id = source.groupId || source.roomId || source.userId || 'Unknown';
+  var name = '';
+  if (source.type === 'user' && source.userId) {
+    name = getUserName(source.userId, source.userId, 'user');
+    if (name === 'Unknown User') name = 'User_' + source.userId.substring(0, 8);
+  } else if (source.type === 'group' && source.groupId) {
     try {
-      var res = UrlFetchApp.fetch("https://api.line.me/v2/bot/group/" + source.groupId + "/summary", { "headers": { "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "muteHttpExceptions": true });
+      var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/group/' + source.groupId + '/summary', { 'headers': { 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN }, 'muteHttpExceptions': true });
       if (res.getResponseCode() === 200) name = JSON.parse(res.getContentText()).groupName;
-      else name = "Group_" + source.groupId.substring(0, 8);
-    } catch (e) { name = "Group_" + source.groupId.substring(0, 8); }
-  } else if (source.type === "room" && source.roomId) {
-    name = "Room_" + source.roomId.substring(0, 8);
+      else name = 'Group_' + source.groupId.substring(0, 8);
+    } catch (e) { name = 'Group_' + source.groupId.substring(0, 8); }
+  } else if (source.type === 'room' && source.roomId) {
+    name = 'Room_' + source.roomId.substring(0, 8);
   }
-  return name.replace(/[\\\/\[\]\?\*]/g, "");
+  return getSafeSheetName(name);
 }
 
 function sendFlexSavedMessage(replyToken, typeLabel, fileName) {
   var flexContent = {
-    "type": "bubble",
-    "body": { "type": "box", "layout": "vertical", "contents": [
-      { "type": "text", "text": "✅ 保存しました(" + typeLabel + ")", "weight": "bold", "size": "lg", "color": "#00b900" },
-      { "type": "box", "layout": "vertical", "margin": "lg", "spacing": "sm", "contents": [
-        { "type": "box", "layout": "baseline", "spacing": "sm", "contents": [
-          { "type": "text", "text": "File", "color": "#aaaaaa", "size": "sm", "flex": 1 },
-          { "type": "text", "text": fileName, "wrap": true, "color": "#666666", "size": "sm", "flex": 4 }
+    'type': 'bubble',
+    'body': { 'type': 'box', 'layout': 'vertical', 'contents': [
+      { 'type': 'text', 'text': '✅ 保存しました(' + typeLabel + ')', 'weight': 'bold', 'size': 'lg', 'color': '#00b900' },
+      { 'type': 'box', 'layout': 'vertical', 'margin': 'lg', 'spacing': 'sm', 'contents': [
+        { 'type': 'box', 'layout': 'baseline', 'spacing': 'sm', 'contents': [
+          { 'type': 'text', 'text': 'File', 'color': '#aaaaaa', 'size': 'sm', 'flex': 1 },
+          { 'type': 'text', 'text': fileName, 'wrap': true, 'color': '#666666', 'size': 'sm', 'flex': 4 }
         ] }
       ] }
     ] },
-    "footer": { "type": "box", "layout": "vertical", "spacing": "sm", "contents": [
-      { "type": "button", "style": "primary", "height": "sm", "color": "#00b900", "action": { "type": "postback", "label": "名前を変更", "data": "action=rename", "inputOption": "openKeyboard", "fillInText": "/rename " } },
-      { "type": "box", "layout": "horizontal", "spacing": "sm", "contents": [
-        { "type": "button", "style": "secondary", "height": "sm", "color": "#ff9f00", "action": { "type": "postback", "label": "メモを追記", "data": "action=memo", "inputOption": "openKeyboard", "fillInText": "/memo " } },
-        { "type": "button", "style": "secondary", "height": "sm", "color": "#ff3b30", "action": { "type": "message", "label": "削除", "text": "/delete" } }
+    'footer': { 'type': 'box', 'layout': 'vertical', 'spacing': 'sm', 'contents': [
+      { 'type': 'button', 'style': 'primary', 'height': 'sm', 'color': '#00b900', 'action': { 'type': 'postback', 'label': '名前を変更', 'data': 'action=rename', 'inputOption': 'openKeyboard', 'fillInText': '/rename ' } },
+      { 'type': 'box', 'layout': 'horizontal', 'spacing': 'sm', 'contents': [
+        { 'type': 'button', 'style': 'secondary', 'height': 'sm', 'color': '#ff9f00', 'action': { 'type': 'postback', 'label': 'メモを追記', 'data': 'action=memo', 'inputOption': 'openKeyboard', 'fillInText': '/memo ' } },
+        { 'type': 'button', 'style': 'secondary', 'height': 'sm', 'color': '#ff3b30', 'action': { 'type': 'message', 'label': '削除', 'text': '/delete' } }
       ] },
-      { "type": "button", "style": "link", "height": "sm", "action": { "type": "message", "label": "一覧を見る", "text": "/list" } }
+      { 'type': 'button', 'style': 'link', 'height': 'sm', 'action': { 'type': 'message', 'label': '一覧を見る', 'text': '/list' } }
     ] }
   };
-  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", {
-    "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN },
-    "method": "post",
-    "payload": JSON.stringify({ "replyToken": replyToken, "messages": [{ "type": "flex", "altText": "✅ 保存完了: " + fileName, "contents": flexContent }] }),
-    "muteHttpExceptions": true
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    'headers': { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN },
+    'method': 'post',
+    'payload': JSON.stringify({ 'replyToken': replyToken, 'messages': [{ 'type': 'flex', 'altText': '✅ 保存完了: ' + fileName, 'contents': flexContent }] }),
+    'muteHttpExceptions': true
   });
 }
 
 function replyMessage(replyToken, text) {
-  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", { "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "method": "post", "payload": JSON.stringify({ "replyToken": replyToken, "messages": [{ "type": "text", "text": text }] }), "muteHttpExceptions": true });
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', { 'headers': { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN }, 'method': 'post', 'payload': JSON.stringify({ 'replyToken': replyToken, 'messages': [{ 'type': 'text', 'text': text }] }), 'muteHttpExceptions': true });
 }
 
 function pushMessage(to, text) {
-  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", { "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "method": "post", "payload": JSON.stringify({ "to": to, "messages": [{ "type": "text", "text": text }] }), "muteHttpExceptions": true });
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', { 'headers': { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN }, 'method': 'post', 'payload': JSON.stringify({ 'to': to, 'messages': [{ 'type': 'text', 'text': text }] }), 'muteHttpExceptions': true });
 }
 
 function sendHelp(replyToken) {
-  replyMessage(replyToken, "🤖 [基本コマンド]\n・/commands : 詳細マニュアルを表示\n・/rename [名前] : 直前のファイル名を変更\n・/memo [内容] : ファイルにメモを追記\n・/list : 本日のファイル一覧を表示\n・/help : この一覧を表示");
+  replyMessage(replyToken, '📖 [基本操作]\n・画像送信：自動保存されます\n・/list : 本日のファイル一覧を表示\n・/link : フォルダとログへのリンクを表示\n・/commands : 全コマンドの詳細を表示');
 }
 
 function sendDetailedCommands(replyToken) {
-  var msg = "📝 [ボット完全マニュアル]\n━━━━━━━━━━━━━━\n✨ リネーム (/rename)\n・/rename [名前] : 直前のファイルをリネーム\n・/rename [番号] [名前] : 指定番号のファイルをリネーム\n・/rename last [個数] [名前] : 直近N件を一括リネーム\n・/rename all [名前] : 本日の全ファイルを一括リネーム\n\n📝 メモ追記 (/memo)\n・/memo [内容] : 直前のファイルのログにメモを追記\n\n🗑️ 削除 (/delete)\n・直前のファイルをゴミ箱へ移動\n\n⚙️ 設定 (/reply)\n・/reply [on/off] : 通知の切替\n━━━━━━━━━━━━━━";
+  var msg = '📋 [全コマンド一覧]\n━━━━━━━━━━━━━━\n✨ 名前変更 (/rename)\n・/rename [名前] : 直前を変更\n・/rename [番号] [名前] : 指定番号を変更\n・/rename last [個数] [名前] : 直近n件を一括\n・/rename all [名前] : 本日の全ファイルを一括\n\n📝 メモ (/memo)\n・/memo [内容] : 直前にメモ\n\n🗑 削除 (/delete)\n・/delete : 直前を削除\n・/delete [番号] : 指定番号を削除\n\n⚙ その他\n・/list : ファイル一覧を表示\n・/link : フォルダ/ログURLを表示\n・/reply [on/off] : 通知切替\n・/debug : 接続チェック\n・/contact [内容] : 管理者へ送信\n━━━━━━━━━━━━━━';
   replyMessage(replyToken, msg);
 }
 
-function handleDeleteCommand(replyToken, sourceId) {
+function handleDeleteCommand(argsText, replyToken, sourceId, source) {
   try {
-    var lastId = props.getProperty("LAST_FILE_ID_" + sourceId);
-    if (!lastId) throw new Error("対象なし。");
-    var file = DriveApp.getFileById(lastId);
-    file.setTrashed(true);
-    replyMessage(replyToken, "🗑️ ファイルを削除しました。");
-  } catch (e) { replyMessage(replyToken, "❌ 削除失敗: " + e.message); }
+    var dateString = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+    var groupFolder = getOrCreateGroupFolder(source, sourceId);
+    var dateFolders = groupFolder.getFoldersByName(dateString);
+    if (!dateFolders.hasNext()) throw new Error('本日のファイルはありません。');
+    var targetFolder = dateFolders.next();
+
+    var files = [];
+    var fileIt = targetFolder.getFiles();
+    while(fileIt.hasNext()) { files.push(fileIt.next()); }
+    files.sort(function(a, b) { return b.getLastUpdated() - a.getLastUpdated(); });
+
+    var targetFile = null;
+    var arg = argsText.trim();
+    if (!arg) {
+      var lastId = props.getProperty('LAST_FILE_ID_' + sourceId);
+      if (!lastId) throw new Error('直前のファイルが見つかりません。');
+      targetFile = DriveApp.getFileById(lastId);
+    } else if (!isNaN(arg)) {
+      var index = parseInt(arg) - 1;
+      if (index < 0 || index >= files.length) throw new Error('該当番号なし。');
+      targetFile = files[index];
+    }
+
+    if (targetFile) {
+      targetFile.setTrashed(true);
+      replyMessage(replyToken, '🗑 ファイルを削除（ゴミ箱へ）しました。');
+    }
+  } catch (e) { replyMessage(replyToken, '📌 削除失敗: ' + e.message); }
 }
 
 function handleReplyModeCommand(mode, replyToken, sourceId, source) {
-  var status = (mode.toLowerCase() === "on") ? "on" : "off";
-  props.setProperty("REPLY_MODE_" + sourceId, status);
-  replyMessage(replyToken, "⚙️ 自動応答: " + status.toUpperCase());
+  var status = (mode.toLowerCase() === 'on') ? 'on' : 'off';
+  props.setProperty('REPLY_MODE_' + sourceId, status);
+  replyMessage(replyToken, '⚙ 自動応答通知: ' + status.toUpperCase());
 }
 
 function sendList(replyToken, source, sourceId) {
   try {
-    var dateString = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd");
+    var dateString = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
     var groupFolder = getOrCreateGroupFolder(source, sourceId);
     var folders = groupFolder.getFoldersByName(dateString);
     var fileList = [];
     if (folders.hasNext()) {
       var files = folders.next().getFiles();
-      while (files.hasNext()) { fileList.push("- " + files.next().getName()); }
+      while (files.hasNext()) { fileList.push(files.next()); }
+      fileList.sort(function(a, b) { return b.getLastUpdated() - a.getLastUpdated(); });
     }
-    replyMessage(replyToken, "📂 本日のファイル:\n" + (fileList.length > 0 ? fileList.join("\n") : "なし"));    
-  } catch (e) { replyMessage(replyToken, "❌ リスト取得失敗"); }
+    var msg = '📂 本日のファイル(新着順):\n' + (fileList.length > 0 ? fileList.map(function(f, i) { return (i+1) + '. ' + f.getName(); }).join('\n') : 'なし');
+    replyMessage(replyToken, msg);
+  } catch (e) { replyMessage(replyToken, '📌 リスト取得失敗'); }
+}
+
+function handleDebugCommand(replyToken, source, sourceId) {
+  var report = '🔎 [接続診断レポート]\n';
+  try {
+    report += '✅ Properties: OK\n';
+    report += (CHANNEL_ACCESS_TOKEN ? '✅ Token: OK\n' : '❌ Token: MISSING\n');
+    var root = DriveApp.getFolderById(ROOT_FOLDER_ID);
+    report += '✅ Drive: ' + root.getName() + ' (OK)\n';
+    var ss = getOrCreateSpreadsheet(source, sourceId);
+    report += '✅ Logs SS: OK\n';
+    var secretSs = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+    report += '✅ Secret SS: OK\n';
+    report += '\n✨ 正常に稼働中。';
+  } catch (e) {
+    report += '❌ エラー: ' + e.toString();
+  }
+  replyMessage(replyToken, report);
 }
 
 function getUserName(sourceId, userId, sourceType) {
+  var cache = CacheService.getScriptCache();
+  var cachedName = cache.get('user_name_' + userId);
+  if (cachedName) return cachedName;
+
   try {
-    var url = (sourceType === "group") ? "https://api.line.me/v2/bot/group/" + sourceId + "/member/" + userId : 
-              (sourceType === "room") ? "https://api.line.me/v2/bot/room/" + sourceId + "/member/" + userId :   
-              "https://api.line.me/v2/bot/profile/" + userId;
-    var res = UrlFetchApp.fetch(url, { "headers": { "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "muteHttpExceptions": true });
-    if (res.getResponseCode() === 200) return JSON.parse(res.getContentText()).displayName;
+    var url = (sourceType === 'group') ? 'https://api.line.me/v2/bot/group/' + sourceId + '/member/' + userId :
+              (sourceType === 'room') ? 'https://api.line.me/v2/bot/room/' + sourceId + '/member/' + userId :
+              'https://api.line.me/v2/bot/profile/' + userId;
+    var res = UrlFetchApp.fetch(url, { 'headers': { 'Authorization': 'Bearer ' + CHANNEL_ACCESS_TOKEN }, 'muteHttpExceptions': true });
+    if (res.getResponseCode() === 200) {
+      var name = JSON.parse(res.getContentText()).displayName;
+      cache.put('user_name_' + userId, name, 3600); // 1時間キャッシュ
+      return name;
+    }
   } catch (e) {}
-  return "Unknown User";
+  return 'Unknown User';
 }
 
 function handleLinkCommand(replyToken, source, sourceId) {
   try {
     var folder = getOrCreateGroupFolder(source, sourceId);
     var ss = getOrCreateSpreadsheet(source, sourceId);
-    replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
-  } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
+    replyMessage(replyToken, '🔗 リンク案内\n📂 フォルダ: ' + folder.getUrl() + '\n📊 ログSS: ' + ss.getUrl());
+  } catch (e) { replyMessage(replyToken, '📌 リンク取得失敗'); }
+}
+
+function handleContactCommand(text, replyToken, userName, source) {
+  var adminId = props.getProperty('MY_USER_ID');
+  if (adminId) {
+    pushMessage(adminId, '📧 Contact from ' + userName + ':\n' + text);
+    replyMessage(replyToken, '✅ 管理者へ送信しました。');
+  }
 }
