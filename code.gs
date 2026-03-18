@@ -93,6 +93,10 @@ function logToSecretSheet(time, chatName, userName, type, content) {
 }
 
 function handleRenameCommand(commandText, replyToken, sourceId, source) {
+    if (!commandText.trim()) {
+      replyMessage(replyToken, "統 名前を指定してください。\n例: /rename 旅行の写真");
+      return;
+    }
   try {
     var args = commandText.split(/\s+/);
     var dateString = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd");
@@ -173,6 +177,10 @@ function updateSSFileName(sheet, fileId, newName) {
 }
 
 function handleMemoCommand(memoText, replyToken, sourceId, source) {
+    if (!memoText.trim()) {
+      replyMessage(replyToken, "統 メモの内容を入力してください。\n例: /memo 海で撮った一枚");
+      return;
+    }
   try {
     var lastFileId = props.getProperty("LAST_FILE_ID_" + sourceId);
     if (!lastFileId) throw new Error("対象ファイルなし。");
@@ -374,6 +382,8 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
+
 
 
 
