@@ -282,8 +282,8 @@ function getBaseName(source) {
 
 function sendFlexSavedMessage(replyToken, typeLabel, fileName) {
   var flexContent = { "type": "bubble", "body": { "type": "box", "layout": "vertical", "contents": [ { "type": "text", "text": "✅ 保存しました(" + typeLabel + ")", "weight": "bold", "size": "lg", "color": "#00b900" }, { "type": "box", "layout": "vertical", "margin": "lg", "spacing": "sm", "contents": [ { "type": "box", "layout": "baseline", "spacing": "sm", "contents": [ { "type": "text", "text": "File", "color": "#aaaaaa", "size": "sm", "flex": 1 }, { "type": "text", "text": fileName, "wrap": true, "color": "#666666", "size": "sm", "flex": 4 } ] } ] } ] }, "footer": { "type": "box", "layout": "vertical", "spacing": "sm", "contents": [ { "type": "button", "style": "primary", "height": "sm", "color": "#00b900", "action": { "type": "postback", "label": "名前を変更", "data": "action=rename", "inputOption": "openKeyboard", "fillInText": "/rename " } }, { "type": "box", "layout": "horizontal", "spacing": "sm", "contents": [ { "type": "button", "style": "secondary", "height": "sm", "color": "#ff9f00", "action": { "type": "postback", "label": "メモを追記", "data": "action=memo", "inputOption": "openKeyboard", "fillInText": "/memo " }, "flex": 2 }, { "type": "button", "style": "secondary", "height": "sm", "color": "#ff3b30", "action": { "type": "message", "label": "削除", "text": "/delete" }, "flex": 1 } ] }, { "type": "button", "style": "link", "height": "sm", "action": { "type": "message", "label": "一覧を見る", "text": "/list" } } ] } };
-  var quickReply = { "items": [ { "type": "action", "action": { "type": "postback", "label": "名前変更", "data": "action=rename", "inputOption": "openKeyboard", "fillInText": "/rename " } }, { "type": "action", "action": { "type": "postback", "label": "メモ追記", "data": "action=memo", "inputOption": "openKeyboard", "fillInText": "/memo " } }, { "type": "action", "action": { "type": "message", "label": "削除", "text": "/delete" } }, { "type": "action", "action": { "type": "message", "label": "一覧", "text": "/list" } } ] };     
-  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", { "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "method": "post", "payload": JSON.stringify({ "replyToken": replyToken, "messages": [{ "type": "flex", "altText": "✅ 保存完了: " + fileName, "contents": flexContent, "quickReply": quickReply }] }), "muteHttpExceptions": true });
+       
+  UrlFetchApp.fetch("https://api.line.me/v2/bot/message/reply", { "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "method": "post", "payload": JSON.stringify({ "replyToken": replyToken, "messages": [{ "type": "flex", "altText": "✅ 保存完了: " + fileName, "contents": flexContent }] }), "muteHttpExceptions": true });
 }
 
 function replyMessage(replyToken, text) {
@@ -382,6 +382,7 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
 
 
 
