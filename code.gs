@@ -58,15 +58,30 @@ function doPost(e) {
 function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
 
 function logToSecretSheet(time, chatName, userName, type, content) {
-  try {
-    var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-    var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
-    var sheet = ss.getSheetByName(safeSheetName);
-    if (!sheet) {
-      sheet = ss.insertSheet(safeSheetName);
-      sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
-      sheet.setFrozenRows(1);
+    try {
+      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+      var safeSheetName = (chatName || "Unknown").substring(0, 31).replace(/[\\\/\[\]\?\*]/g, "");
+      var sheet = ss.getSheetByName(safeSheetName);
+      if (!sheet) {
+        sheet = ss.insertSheet(safeSheetName);
+        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([time, chatName, userName, type, content]);
+    } catch (e) {
+      // 🚨 エラーが発生した場合、LINEの管理者に詳細を通知
+      var adminId = PropertiesService.getScriptProperties().getProperty("MY_USER_ID");
+      if (adminId) {
+        try {
+          UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
+            "headers": { "Content-Type": "application/json", "Authorization": "Bearer " + PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN") },
+            "method": "post",
+            "payload": JSON.stringify({ "to": adminId, "messages": [{ "type": "text", "text": "🚨 SecretLog Error: " + e.message + "\nSheetName: " + chatName + "\nType: " + type }] })
+          });
+        } catch (f) {}
+      }
     }
+  }
     sheet.appendRow([time, chatName, userName, type, content]);
   } catch (e) {
     console.error(e);
@@ -348,3 +363,4 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
+
