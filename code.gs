@@ -109,6 +109,28 @@ function handleRenameCommand(commandText, replyToken, sourceId, source) {
     files.sort(function(a, b) { return b.getLastUpdated() - a.getLastUpdated(); });
 
     if (args[0].toLowerCase() === "all") {
+        var baseName = args.slice(1).join(" ");
+        if (!baseName) throw new Error("蜷榊燕繧呈欠螳壹＠縺ｦ縺上□縺輔＞縲");
+        for (var i = 0; i < files.length; i++) {
+          var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
+          var newName = baseName + "_" + (files.length - i) + ext;
+          files[i].setName(newName);
+          updateSSFileName(sheet, files[i].getId(), newName);
+        }
+        replyMessage(replyToken, "笨 譛ｬ譌･縺ｮ蜈ｨ " + files.length + " 莉ｶ繧剃ｸ諡ｬ繝ｪ繝阪繝(SS蜷梧悄)縺励∪縺励◆縲");        
+      } else if (args[0].toLowerCase() === "last" && !isNaN(args[1]) && args.length > 2) {
+        var count = parseInt(args[1]);
+        var baseName = args.slice(2).join(" ");
+        if (count <= 0) throw new Error("1莉ｶ莉･荳翫ｒ謖ｮ壹＠縺ｦ縺上□縺輔＞縲");
+        var limit = Math.min(count, files.length);
+        for (var i = 0; i < limit; i++) {
+          var ext = files[i].getName().substring(files[i].getName().lastIndexOf("."));
+          var newName = baseName + "_" + (limit - i) + ext;
+          files[i].setName(newName);
+          updateSSFileName(sheet, files[i].getId(), newName);
+        }
+        replyMessage(replyToken, "笨 逶ｴ霑代 " + limit + " 莉ｶ繧剃ｸ諡ｬ繝ｪ繝阪繝(SS蜷梧悄)縺励∪縺励◆縲");
+      } else if (false) {
       var baseName = args.slice(1).join(" ");
       if (!baseName) throw new Error("名前を指定してください。");
       for (var i = 0; i < files.length; i++) {
@@ -352,5 +374,7 @@ function enforceAdminPrivacy() {
     Logger.log("エラー: " + e.toString());
   }
 }
+
+
 
 
