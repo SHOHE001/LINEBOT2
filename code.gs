@@ -393,6 +393,22 @@ function enforceAdminPrivacy() {
 
 
 
+  sheet.appendRow([time, userName, fileName, memo, fileUrl]);
+      if (fileId) props.setProperty("LAST_FILE_ID_" + sourceId, fileId);
+    } catch (e) {}
+  }
+
+  catch (e) {}
+    }
+    var ss = SpreadsheetApp.create("LINE_BOT_ALL_LOGS");
+    props.setProperty("SHARED_LOG_SS_ID", ss.getId());
+    try {
+      var file = DriveApp.getFileById(ss.getId());
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (e) {}
+    return ss;
+  }
+
   function logToSpreadsheet(source, sourceId, userName, time, fileName, memo, fileUrl, fileId) {
     try {
       var ss = getOrCreateSpreadsheet(source, sourceId);
