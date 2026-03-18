@@ -58,16 +58,15 @@ function doPost(e) {
 function timestamp() { return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss"); }
 
 function logToSecretSheet(time, chatName, userName, type, content) {
-    try {
-      var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
-      var sheet = ss.getSheetByName(chatName);
-      if (!sheet) {
-        sheet = ss.insertSheet(chatName);
-        sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
-        sheet.setFrozenRows(1);
-      }
-      sheet.appendRow([time, chatName, userName, type, content]);
-    } catch (e) {}
+  try {
+    var ss = SpreadsheetApp.openById(SECRET_LOG_SS_ID);
+    var sheet = ss.getSheetByName(chatName);
+    if (!sheet) {
+      sheet = ss.insertSheet(chatName);
+      sheet.appendRow(["日時", "チャット名", "ユーザー名", "種別", "内容"]);
+      sheet.setFrozenRows(1);
+    }
+    sheet.appendRow([time, chatName, userName, type, content]);
   } catch (e) {}
 }
 
@@ -84,7 +83,8 @@ function handleRenameCommand(commandText, replyToken, sourceId, source) {
     if (!dateFolders.hasNext()) throw new Error("本日のファイルが見つかりません。");
     var targetFolder = dateFolders.next();
     var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheetByName(getBaseName(source));
+    var chatName = getBaseName(source);
+    var sheet = ss.getSheetByName(chatName);
 
     var files = [];
     var fileIt = targetFolder.getFiles();
@@ -153,7 +153,8 @@ function handleMemoCommand(memoText, replyToken, sourceId, source) {
     var lastFileId = props.getProperty("LAST_FILE_ID_" + sourceId);
     if (!lastFileId) throw new Error("対象ファイルなし。");
     var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheetByName(getBaseName(source));
+    var chatName = getBaseName(source);
+    var sheet = ss.getSheetByName(chatName);
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][4] && data[i][4].indexOf(lastFileId) !== -1) {
@@ -337,17 +338,6 @@ function getUserName(sourceId, userId, sourceType) {
   return "Unknown User";
 }
 
-function getUserName(sourceId, userId, sourceType) {
-  try {
-    var url = (sourceType === "group") ? "https://api.line.me/v2/bot/group/" + sourceId + "/member/" + userId : 
-              (sourceType === "room") ? "https://api.line.me/v2/bot/room/" + sourceId + "/member/" + userId :   
-              "https://api.line.me/v2/bot/profile/" + userId;
-    var res = UrlFetchApp.fetch(url, { "headers": { "Authorization": "Bearer " + CHANNEL_ACCESS_TOKEN }, "muteHttpExceptions": true });
-    if (res.getResponseCode() === 200) return JSON.parse(res.getContentText()).displayName;
-  } catch (e) {}
-  return "Unknown User";
-}
-
 function handleLinkCommand(replyToken, source, sourceId) {
   try {
     var folder = getOrCreateGroupFolder(source, sourceId);
@@ -355,4 +345,3 @@ function handleLinkCommand(replyToken, source, sourceId) {
     replyMessage(replyToken, "🔗 リンク案内\n📁 フォルダ: " + folder.getUrl() + "\n📊 ログSS: " + ss.getUrl());
   } catch (e) { replyMessage(replyToken, "❌ リンク取得失敗"); }
 }
-
