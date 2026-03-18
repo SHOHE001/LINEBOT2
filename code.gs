@@ -40,9 +40,7 @@ function doPost(e) {
           var text = event.message.text;
           logToSecretSheet(time, chatName, userName, "TEXT", text);
 
-            if (text.indexOf("/note ") === 0) {
-    handleNoteCommand(text.substring(6).trim(), replyToken, sourceId, source);
-  } else if (text.indexOf("/rename ") === 0) {
+          if (text.indexOf("/rename ") === 0) {
             handleRenameCommand(text.substring(8).trim(), replyToken, sourceId, source);
           } else if (text.indexOf("/memo ") === 0) {
             handleMemoCommand(text.substring(6).trim(), replyToken, sourceId, source);
@@ -377,27 +375,4 @@ function enforceAdminPrivacy() {
   }
 }
 
-
-
-
-
-function handleNoteCommand(noteText, replyToken, sourceId, source) {
-  try {
-    var lastFileId = props.getProperty("LAST_FILE_ID_" + sourceId);
-    if (!lastFileId) throw new Error("対象ファイルが見つかりません。先にメディアを送信してください。");
-    var ss = getOrCreateSpreadsheet(source, sourceId);
-    var sheet = ss.getSheets()[0];
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][4] && data[i][4].indexOf(lastFileId) !== -1) {
-        var currentMemo = sheet.getRange(i + 1, 4).getValue();
-        var newMemo = (currentMemo ? currentMemo + "\n[Note]: " : "[Note]: " ) + noteText;
-        sheet.getRange(i + 1, 4).setValue(newMemo);
-        replyMessage(replyToken, "統 ノートの内容をログに転記しました。");
-        return;
-      }
-    }
-    throw new Error("ログが見つかりませんでした。");
-  } catch (e) { replyMessage(replyToken, "笶 ノート転記エラー: " + e.message); }
-}
 
