@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import requests
+from urllib.parse import quote
 from flask import Flask, request, abort
 
 load_dotenv()
@@ -30,7 +31,8 @@ handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
 app = Flask(__name__)
 
-REQUEST_TIMEOUT = int(os.environ.get('NEXTCLOUD_TIMEOUT', '30'))
+_timeout_str = os.environ.get('NEXTCLOUD_TIMEOUT', '30')
+REQUEST_TIMEOUT = int(_timeout_str) if _timeout_str.isdigit() else 30
 
 
 def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
@@ -43,7 +45,7 @@ def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
     dirs = list(dict.fromkeys(["/LINE_BOT", dir_to_create]))  # 重複を除去しつつ順序保持
 
     for d in dirs:
-        dir_url = f"{nextcloud_url}/remote.php/dav/files/{nextcloud_user}{d}"
+        dir_url = f"{nextcloud_url}/remote.php/dav/files/{quote(nextcloud_user)}{quote(d, safe='/')}"
         try:
             response = requests.request("MKCOL", dir_url, auth=auth, timeout=REQUEST_TIMEOUT)
         except requests.exceptions.Timeout:
@@ -58,7 +60,7 @@ def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
             app.logger.error(f"フォルダ作成に失敗: {d}, Status: {response.status_code}, Resp: {response.text}")
             return False
 
-    upload_url = f"{nextcloud_url}/remote.php/dav/files/{nextcloud_user}{remote_path}"
+    upload_url = f"{nextcloud_url}/remote.php/dav/files/{quote(nextcloud_user)}{quote(remote_path, safe='/')}"
     try:
         response = requests.put(upload_url, data=file_content_bytes, auth=auth, timeout=REQUEST_TIMEOUT)
     except requests.exceptions.Timeout:
@@ -76,13 +78,16 @@ def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
 
 
 def reply_text(reply_token: str, text: str) -> None:
-    with ApiClient(configuration) as api_client:
-        MessagingApi(api_client).reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=text)],
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(
+                    reply_token=reply_token,
+                    messages=[TextMessage(text=text)],
+                )
             )
-        )
+    except Exception as e:
+        app.logger.error(f"LINEへの返信に失敗しました: {e}")
 
 
 @app.route("/callback", methods=['POST'])
