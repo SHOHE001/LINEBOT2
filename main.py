@@ -10,7 +10,7 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi, MessagingApiBlob,
-    ReplyMessageRequest, TextMessage
+    ReplyMessageRequest, PushMessageRequest, TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, ImageMessageContent, VideoMessageContent
 
@@ -21,6 +21,7 @@ _required_env = [
     'NEXTCLOUD_URL',
     'NEXTCLOUD_USER',
     'NEXTCLOUD_PASSWORD',
+    'ADMIN_LINE_USER_ID',
 ]
 _missing = [k for k in _required_env if not os.environ.get(k)]
 if _missing:
@@ -50,14 +51,17 @@ def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
             response = requests.request("MKCOL", dir_url, auth=auth, timeout=REQUEST_TIMEOUT)
         except requests.exceptions.Timeout:
             app.logger.error(f"フォルダ作成タイムアウト: {d}")
+            notify_admin(f"フォルダ作成タイムアウト: {d}")
             return False
         except requests.exceptions.RequestException as e:
             app.logger.error(f"フォルダ作成リクエストエラー: {d}, {e}")
+            notify_admin(f"フォルダ作成リクエストエラー: {d}\n{e}")
             return False
 
         # 405 = 既に存在する（正常）、201 = 作成成功
         if response.status_code not in [201, 405]:
             app.logger.error(f"フォルダ作成に失敗: {d}, Status: {response.status_code}, Resp: {response.text}")
+            notify_admin(f"フォルダ作成失敗: {d}\nStatus: {response.status_code}")
             return False
 
     upload_url = f"{nextcloud_url}/remote.php/dav/files/{quote(nextcloud_user)}{quote(remote_path, safe='/')}"
@@ -65,16 +69,33 @@ def upload_to_nextcloud(remote_path: str, file_content_bytes: bytes) -> bool:
         response = requests.put(upload_url, data=file_content_bytes, auth=auth, timeout=REQUEST_TIMEOUT)
     except requests.exceptions.Timeout:
         app.logger.error(f"アップロードタイムアウト: {remote_path}")
+        notify_admin(f"アップロードタイムアウト: {remote_path}")
         return False
     except requests.exceptions.RequestException as e:
         app.logger.error(f"アップロードリクエストエラー: {remote_path}, {e}")
+        notify_admin(f"アップロードリクエストエラー: {remote_path}\n{e}")
         return False
 
     if response.status_code in [201, 204]:
         return True
 
     app.logger.error(f"Nextcloudへのアップロードに失敗。ステータスコード: {response.status_code}, 応答: {response.text}")
+    notify_admin(f"アップロード失敗: {remote_path}\nStatus: {response.status_code}")
     return False
+
+
+def notify_admin(message: str) -> None:
+    admin_user_id = os.environ.get('ADMIN_LINE_USER_ID')
+    try:
+        with ApiClient(configuration) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=admin_user_id,
+                    messages=[TextMessage(text=f"[LINE Bot エラー通知]\n{message}")],
+                )
+            )
+    except Exception as e:
+        app.logger.error(f"管理者への通知送信に失敗: {e}")
 
 
 def reply_text(reply_token: str, text: str) -> None:
@@ -121,6 +142,7 @@ def handle_media_message(event):
             file_bytes = messaging_api_blob.get_message_content(message_id)
         except Exception as e:
             app.logger.error(f"LINEからのコンテンツ取得に失敗: {e}")
+            notify_admin(f"コンテンツ取得失敗 (user: {user_id}, msg: {message_id})\n{e}")
             reply_text(reply_token, "ファイルの取得に失敗しました。もう一度お試しください。")
             return
 
@@ -129,6 +151,7 @@ def handle_media_message(event):
             reply_text(reply_token, "保存しました！")
         else:
             app.logger.error(f"Nextcloudへの保存失敗: {remote_path}")
+            notify_admin(f"Nextcloud保存失敗 (user: {user_id})\nPath: {remote_path}")
             reply_text(reply_token, "保存に失敗しました。しばらく経ってからお試しください。")
 
 
